@@ -3,8 +3,7 @@
 .RData 
 .DS_Store 
 Input/  
-Output/ 
-Scripts/ 
+Output/  
 Graphics/ 
 Smoke_polygons/  
 Wildfire smoke.Rproj 
