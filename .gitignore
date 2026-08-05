@@ -1,0 +1,12 @@
+.Rproj.user
+.Rhistory 
+.RData 
+.DS_Store 
+Input/  
+Output/ 
+Scripts/ 
+Graphics/ 
+Smoke_polygons/  
+Wildfire smoke.Rproj 
+
+
