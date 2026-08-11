@@ -101,17 +101,13 @@ WTSP12 <- WTSP9 %>%
 
 ## Rejoin lat/lon values to WTSP tag data
 
-# Create df with site, lat, lon
-WTSP_latlon <- WTSP %>%
-  distinct(location, latitude, longitude) %>%
+# Read in latlon df
+WTSP_latlon <- read.csv("C:/Users/leona/OneDrive/Desktop/WTSP smoke/Output/Tabular Data/latlong_to_join.csv") %>%
+  select(-X) %>%
   rename(site = location)
 
-# Filter latlon df to only include sites present in YEWA8
-WTSP_latlon_2 <- WTSP_latlon %>%
-  filter(site %in% WTSP11$site)
-
 # Join lat/lon to WTSP11 based on 'site'
-WTSP12 <- left_join(WTSP11, WTSP_latlon_2, by = "site", relationship = "many-to-one")
+WTSP12 <- left_join(WTSP11, WTSP_latlon, by = "site", relationship = "many-to-one")
 
 # Save csv
 write.csv(WTSP12, paste0("Input/Tabular Data/WTSP_data_for_analysis_", Sys.Date(), ".csv"), row.names = FALSE)

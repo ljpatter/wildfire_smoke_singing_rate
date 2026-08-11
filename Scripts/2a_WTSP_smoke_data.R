@@ -15,7 +15,7 @@ library(tidyverse)    # wrangling
 library(sf)           # spatial analysis
 
 ## Read in ARU locations
-WTSP <- read.csv("Output/Tabular Data/WTSP_data_for_analysis_2026-07-27.csv") 
+WTSP <- read.csv("Input/Tabular Data/WTSP_data_for_analysis_2026-08-05.csv") 
 
 # Read in PM2.5 data
 file_path <- "Input/May_June_2023_smoke_data.csv"
@@ -99,8 +99,6 @@ count(site_station, pm_station, sort = TRUE)
 out2 <- out %>%
   select(`Interval Start`, Caroline, `Drayton Valley`, Power, Gibbons, `St. Albert`) %>%
   rename(date_time = 'Interval Start') 
-
-###
 
 # Convert PM2.5 to long format
 pm_long <- out2 |>
@@ -201,7 +199,8 @@ WTSP |>
 #Min.    1st Qu.  Median    Mean    3rd Qu.    Max. 
 #23.57   44.86    64.84     59.34   70.86      95.97
 
-
+# Save 
+write.csv(WTSP, "Output/Tabular Data/WTSP_with_smoke.csv")
 
 
 

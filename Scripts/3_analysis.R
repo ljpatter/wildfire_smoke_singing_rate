@@ -1,5 +1,5 @@
 # ---
-# title: "3_Analysisa"
+# title: "3_Analysis"
 # author: "Leonard Patterson"
 # created: "2026-08-01"
 # description: This code runs analysis for WTSP and YEWA, starting with a paired t-test, followed up
@@ -18,13 +18,14 @@ library(broom.mixed)
 library(tidyverse)
 library(patchwork)
 library(suncalc)
+library(ragg)
 
 ##################################
 ############# WTSP ###############
 ##################################
 
 # Load data
-WTSP <- read.csv("Input/Tabular Data/WTSP_data_for_analysis_2026-07-27.csv")
+WTSP <- read.csv("Input/Tabular Data/WTSP_data_for_analysis_2026-08-05.csv")
 
 #### PAIRED T-TEST ####
 
@@ -289,7 +290,7 @@ site_means <- dat4 %>%
   }) %>%
   ungroup()
 
-ggplot(site_means, aes(smoke_status, var)) +
+p <- ggplot(site_means, aes(smoke_status, var)) +
   geom_line(aes(group = site, colour = dir), alpha = 0.4, linewidth = 0.4) +
   geom_point(alpha = 0.35, size = 1.4, colour = "grey40") +
   geom_line(data = pred, aes(smoke_status, response, group = 1),
@@ -303,6 +304,17 @@ ggplot(site_means, aes(smoke_status, var)) +
   expand_limits(y = 0) +
   labs(x = NULL, y = "Vocal activity rate (songs/min)") +
   theme_classic(base_size = 14)
+
+# Save figure
+ggsave(
+  "Figures/WTSP_VAR_plot.png",
+  plot   = p,
+  device = agg_png,
+  width  = 10,
+  height = 7,
+  units  = "in",
+  dpi    = 600
+)
 
 
 
