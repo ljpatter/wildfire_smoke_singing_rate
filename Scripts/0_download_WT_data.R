@@ -11,7 +11,6 @@ rm(list=ls())
 # To install wildrtrax
 library(remotes)
 library(wildrtrax)
-library(tidyverse)
 library(dplyr)
 
 # Authenticate with WildTrax using environment variables for credentials
@@ -38,4 +37,3 @@ YEWA <- wt_get_projects("ARU") |>
 # Save----
 write.csv(WTSP, paste0("Input/Tabular Data/WTSP_main_report_", Sys.Date(), ".csv"), row.names = FALSE)
 write.csv(YEWA, paste0("Input/Tabular Data/YEWA_main_report_", Sys.Date(), ".csv"), row.names = FALSE)
-

@@ -11,14 +11,15 @@
 # Clear environment
 rm(list=ls())
 
+# Load packages
 library(tidyverse)    # wrangling
 library(sf)           # spatial analysis
 
 ## Read in ARU locations
-WTSP <- read.csv("Input/Tabular Data/WTSP_data_for_analysis_2026-08-05.csv") 
+WTSP <- read.csv("Input/Tabular Data/WTSP_data_for_analysis_2026-09-29.csv") 
 
 # Read in PM2.5 data
-file_path <- "Input/May_June_2023_smoke_data.csv"
+file_path <- "Input/Tabular Data/May_June_2023_smoke_data.csv"
 # read as character, no header, tab-delimited
 PM25 <- read_delim(file_path, delim = ",", col_names = FALSE,
                   col_types = cols(.default = col_character()),
@@ -61,6 +62,11 @@ stations_meta <- tibble(
   longitude  = as.numeric(as.character(PM25[13, ])[lab + 1])
 ) |>
   distinct(station, .keep_all = TRUE)
+# Save
+write.csv(stations_meta, "C:/Users/leona/OneDrive/Desktop/WTSP smoke/Input/Tabular Data/PM25_station_metadata.csv", row.names = FALSE)
+
+
+
 
 ### Find nearest PM2.5 station to each sites and calculate distance in m to each site
 
@@ -177,8 +183,8 @@ WTSP_sd <- WTSP |>
 count(WTSP_sd, smoke_status, n_rec)   # expect 48 and 48, all n_rec = 3
 
 # Summary of values by treatment, one value per site-day
-WTSP_sd |>
-  group_by(smoke_status) |>
+WTSP_smoke <- WTSP_sd %>%
+  group_by(smoke_status) %>%
   summarise(n_sites = n(),
             median_pm = median(pm25),
             q25 = quantile(pm25, 0.25), q75 = quantile(pm25, 0.75),
@@ -211,7 +217,7 @@ write.csv(WTSP, "Output/Tabular Data/WTSP_with_smoke.csv")
 ### HMS smoke polygon corroboration
 ### =========================================================================
 
-homeDir     <- "Smoke_polygons"     # folder holding the unzipped HMS shapefiles
+homeDir     <- "Input/Smoke_polygons"     # folder holding the unzipped HMS shapefiles
 DENS_LEVELS <- c("Light", "Medium", "Heavy")
 HMS_MAX_GAP <- 6                    # hours; flag fallbacks beyond this
 TZ_LOCAL    <- "America/Edmonton"
@@ -399,5 +405,4 @@ walk(c("Smoky", "Non-smoky"), function(m) {
     dplyr::select(site, design, hms_density, pm25) |>
     arrange(site) |> print(n = Inf)
 })
-
 

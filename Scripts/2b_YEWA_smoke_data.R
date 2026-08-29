@@ -10,18 +10,19 @@
 # Clear environment
 rm(list=ls())
 
+# Load packages
 library(tidyverse)    # wrangling
 library(sf)           # spatial analysis
 
 ## Read in ARU locations
-YEWA <- read.csv("Input/Tabular Data/YEWA_data_for_analysis_2026-07-28.csv") 
+YEWA <- read.csv("Input/Tabular Data/YEWA_data_for_analysis_2026-09-29.csv") 
 
 # Tab-delimited despite the .csv extension, with a variable-length preamble
 # above the metadata block, so split manually and locate rows by content.
 # Comma-delimited with quoted fields, a variable-length preamble above the
 # metadata block, and four columns per station. Split manually, strip quotes,
 # and locate rows by content rather than position.
-file_path <- "Input/May_June_July_2025_smoke_data.csv"
+file_path <- "Input/Tabular Data/May_June_July_2025_smoke_data.csv"
 
 lines <- read_lines(file_path)
 n_col <- max(str_count(lines, ",")) + 1
@@ -209,250 +210,43 @@ YEWA_sd <- YEWA |>
 
 count(YEWA_sd, n_rec)   # expect 48 and 48, all n_rec = 3
 
+# Summary of values by treatment, one value per site-day
+YEWA_PM25 <- YEWA %>%
+  group_by(smoke_status) %>%
+  summarise(n_sites = n(),
+            median_pm = median(pm25),
+            q25 = quantile(pm25, 0.25), q75 = quantile(pm25, 0.75),
+            min = min(pm25), max = max(pm25),
+            .groups = "drop")
+
+# A tibble: 2 × 7
+#smoke_status n_sites median_pm   q25   q75   min   max
+#1 non-smoky         81      10.7  6.18  16.2  1.11  28.4
+#2 smoky             81      90.7 67.0  122.  39.2  193. 
+
 # Summary of distances, one value per site
 YEWA |>
   group_by(site) |>
   summarise(km = mean(pm_used_km), .groups = "drop") |>
   pull(km) |> summary()
 
-#Min.    1st Qu. Median  Mean    3rd Qu.  Max. 
-#1.087   2.665   4.117   4.577   5.452     14.035
+#Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#1.004   2.992   4.312   4.642   5.442  13.959
 
 
 ### Determine how many smoky day days there are and how many transcribed recordings
 ### at suitable times exist on each of those days
 
 # Plot PM2.5 as a function of day so see where the smoky days are
-base <- ggplot(YEWA, aes(x = date, y = pm25)) + 
-  geom_point()
+base <- ggplot(YEWA, aes(x = as.Date(date), y = pm25)) + 
+  geom_point() +
+  scale_x_date(date_breaks = "2 days", date_labels = "%b %d") +
+  labs(x = "Date", y = "PM2.5") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 # See where the high-density smoke days are
 YEWA_high_smoke <- YEWA %>%
   filter(pm25 > 70) 
 
-# All smoky days are on the 10/11th of June. Filter to those dates
-# and determine the number of recordings at each site on those days
-YEWA_all_smoky_day_recordings <- YEWA %>%
-  filter(date %in% c("2025-06-10", "2025-06-11"))
-YEWA_all_smoky_day_recordings_2 <- YEWA_all_smoky_day_recordings %>%
-  count(site, date) %>%
-  pivot_wider(names_from = date, values_from = n, values_fill = 0) %>%
-  mutate(total = rowSums(across(-site))) %>%
-  arrange(desc(total))
-
-# Confirm how many recordings on the 10/11th have been transcribed
-YEWA_raw <- read.csv("Input/Tabular Data/YEWA_main_report.csv")
-YEWA_n_recordings <- YEWA_raw %>%
-  mutate(rec_dt   = as_datetime(recording_date_time),
-         rec_date = as_date(rec_dt),
-         rec_hour = hour(rec_dt)) %>%
-  filter(rec_date %in% as_date(c("2025-06-10", "2025-06-11")),
-         rec_hour >= 5 & rec_hour < 13) %>%
-  distinct(location, recording_id, rec_dt, task_is_complete) %>%
-  group_by(location) %>%
-  summarise(
-    n_recordings_comp    = n_distinct(recording_id[task_is_complete == "t"]),
-    recording_times      = paste(sort(format(rec_dt[task_is_complete == "t"], "%Y-%m-%d %H:%M:%S")), collapse = ", "),
-    .groups = "drop"
-  )
-write.csv(YEWA_n_recordings, "Output/Tabular Data/YEWA_smoky_day_recordings.csv") # For Alex
-
-
-
-
-
-
-
-### =========================================================================
-### HMS smoke polygon corroboration
-### =========================================================================
-
-homeDir     <- "Smoke_polygons"     # folder holding the unzipped HMS shapefiles
-DENS_LEVELS <- c("Light", "Medium", "Heavy")
-HMS_MAX_GAP <- 6                    # hours; flag fallbacks beyond this
-TZ_LOCAL    <- "America/Edmonton"
-
-max_dens <- function(x) {
-  x <- x[!is.na(x)]
-  if (!length(x)) return(NA_character_)
-  as.character(x[which.max(as.integer(x))])
-}
-
-YEWA <- YEWA |>
-  mutate(date          = as.Date(date),
-         recording_dt  = ymd_hms(paste(date, time), tz = TZ_LOCAL),
-         recording_utc = with_tz(recording_dt, "UTC"),
-         hour_start    = floor_date(recording_utc, "hour"),
-         hour_end      = hour_start + hours(1))
-
-shp_check <- list.files(homeDir, pattern = "\\.shp$", recursive = TRUE, full.names = TRUE)
-stopifnot(length(shp_check) > 0)
-print(names(st_drop_geometry(st_read(shp_check[1], quiet = TRUE))))   # need Density, Start, End
-
-
-### --- 1. Assign density per recording -------------------------------------
-# gap_hours = 0 when a polygon's imagery window overlaps the recording hour,
-# otherwise the hours between them. Take the densest polygon at gap 0; if none,
-# take the temporally closest polygon that date, densest breaking ties.
-
-hms_assign <- function(current_date) {
-  
-  recs <- filter(YEWA, date == current_date)
-  if (nrow(recs) == 0) return(NULL)
-  
-  base_out <- recs |> dplyr::select(recording_name)
-  
-  shp <- list.files(homeDir, pattern = format(current_date, "%Y%m%d"),
-                    recursive = TRUE, full.names = TRUE)
-  shp <- shp[grepl("\\.shp$", shp)]
-  if (length(shp) == 0) {
-    return(base_out |> mutate(density_hourly = NA_character_,
-                              density_nearest = NA_character_, gap_hours = NA_real_))
-  }
-  
-  poly <- st_read(shp[1], quiet = TRUE) |> st_make_valid()
-  pts  <- st_as_sf(recs, coords = c("longitude", "latitude"), crs = 4326, remove = FALSE)
-  
-  j <- st_join(pts, poly, join = st_within) |>
-    st_drop_geometry() |>
-    mutate(
-      dens        = factor(Density, levels = DENS_LEVELS, ordered = TRUE),
-      smoke_start = as.POSIXct(Start, format = "%Y%j %H%M", tz = "UTC"),
-      smoke_end   = as.POSIXct(End,   format = "%Y%j %H%M", tz = "UTC"),
-      gap_hours = case_when(
-        is.na(dens)                                     ~ NA_real_,
-        smoke_start < hour_end & smoke_end > hour_start  ~ 0,
-        smoke_start >= hour_end ~ as.numeric(difftime(smoke_start, hour_end,  units = "hours")),
-        TRUE                    ~ as.numeric(difftime(hour_start,  smoke_end, units = "hours"))
-      )
-    ) |>
-    filter(!is.na(dens))
-  
-  if (nrow(j) == 0) {
-    return(base_out |> mutate(density_hourly = NA_character_,
-                              density_nearest = NA_character_, gap_hours = NA_real_))
-  }
-  
-  hourly <- j |> filter(gap_hours == 0) |>
-    group_by(recording_name) |>
-    summarise(density_hourly = max_dens(dens), .groups = "drop")
-  
-  nearest <- j |>
-    group_by(recording_name) |>
-    arrange(gap_hours, desc(as.integer(dens)), .by_group = TRUE) |>
-    slice(1) |> ungroup() |>
-    transmute(recording_name, density_nearest = as.character(dens), gap_hours)
-  
-  base_out |>
-    left_join(hourly,  by = "recording_name") |>
-    left_join(nearest, by = "recording_name")
-}
-
-hms_all <- sort(unique(YEWA$date)) |> map(hms_assign) |> list_rbind()
-
-YEWA <- YEWA |>
-  left_join(hms_all, by = "recording_name") |>
-  mutate(
-    hms_density  = factor(coalesce(density_hourly, density_nearest),
-                          levels = DENS_LEVELS, ordered = TRUE),
-    hms_gap      = if_else(!is.na(density_hourly), 0, gap_hours),
-    hms_source   = case_when(!is.na(density_hourly)  ~ "direct overlap",
-                             !is.na(density_nearest) ~ "nearest in time",
-                             TRUE                    ~ "no polygon"),
-    hms_far_flag = hms_source == "nearest in time" & hms_gap > HMS_MAX_GAP
-  ) |>
-  dplyr::select(-density_hourly, -density_nearest, -gap_hours)
-
-
-### --- 2. How much came from the temporal fallback? ------------------------
-
-count(YEWA, hms_source, hms_density)
-
-YEWA |>
-  summarise(n_total    = n(),
-            n_direct   = sum(hms_source == "direct overlap"),
-            n_fallback = sum(hms_source == "nearest in time"),
-            pct_fallback = 100 * mean(hms_source == "nearest in time"),
-            n_no_poly  = sum(hms_source == "no polygon"))
-
-YEWA |> filter(hms_source == "nearest in time") |>
-  summarise(n = n(), median_gap = median(hms_gap), mean_gap = mean(hms_gap),
-            max_gap = max(hms_gap), n_over_6h = sum(hms_far_flag))
-
-YEWA |> filter(hms_source == "nearest in time") |>
-  mutate(gap_bin = cut(hms_gap, c(0, 1, 2, 3, 6, Inf),
-                       labels = c("<=1h", "1-2h", "2-3h", "3-6h", ">6h"),
-                       include.lowest = TRUE)) |>
-  count(smoke_status, gap_bin) |>
-  pivot_wider(names_from = gap_bin, values_from = n, values_fill = 0)
-
-
-### --- 3. Aggregate to site x condition -------------------------------------
-
-corrob <- YEWA |>
-  group_by(site, smoke_status) |>
-  summarise(hms_density = factor(max_dens(hms_density), levels = DENS_LEVELS, ordered = TRUE),
-            pm25        = mean(pm25, na.rm = TRUE),
-            n_fallback  = sum(hms_source == "nearest in time"),
-            .groups = "drop") |>
-  mutate(design = if_else(smoke_status == "smoky", "Smoky", "Non-smoky"))
-
-nrow(corrob)                                  # expect 96
-count(corrob, smoke_status, hms_density)
-
-# PM2.5 by density class - reported for Light and Heavy
-corrob |>
-  group_by(hms_density) |>
-  summarise(n = n(), median_pm = median(pm25),
-            q25 = quantile(pm25, .25), q75 = quantile(pm25, .75),
-            min = min(pm25), max = max(pm25), .groups = "drop")
-
-ggplot(corrob, aes(hms_density, pm25)) +
-  geom_boxplot(outlier.alpha = 0.4) +
-  geom_jitter(width = 0.12, alpha = 0.35, size = 1.4) +
-  scale_y_log10() +
-  labs(x = "HMS smoke density", y = expression(PM[2.5]~(mu*g/m^3))) +
-  theme_classic(base_size = 13)
-
-### --- 4. Agreement ---------------------------------------------------------
-
-# Unambiguous classes only: does Light/Heavy sort the two conditions?
-unamb <- corrob |> filter(hms_density %in% c("Light", "Heavy"))
-tab_unamb <- table(Design = unamb$design,
-                   HMS    = if_else(unamb$hms_density == "Heavy", "Smoky", "Non-smoky"))
-tab_unamb
-cat(sprintf("Unambiguous classes: %d of %d agree (%.1f%%)\n",
-            sum(diag(tab_unamb)), sum(tab_unamb),
-            100 * sum(diag(tab_unamb)) / sum(tab_unamb)))
-
-# Full sample, Medium assigned both ways - conclusion shouldn't depend on it
-agreement <- map_dfr(c("Smoky", "Non-smoky"), function(m) {
-  cb  <- corrob |>
-    mutate(hms_binary = case_when(hms_density == "Heavy"  ~ "Smoky",
-                                  hms_density == "Medium" ~ m,
-                                  TRUE                    ~ "Non-smoky"))
-  tab <- table(Design = cb$design, HMS = cb$hms_binary)
-  tibble(medium_as = m,
-         n         = sum(tab),
-         n_agree   = sum(diag(tab)),
-         pct_agree = 100 * sum(diag(tab)) / sum(tab),
-         kappa     = irr::kappa2(cbind(cb$design, cb$hms_binary))$value)
-})
-agreement
-
-#medium_as     n   n_agree pct_agree kappa
-#1 Smoky      96      91      94.8   0.896
-#2 Non-smoky  96      89      92.7   0.854
-
-# Disagreements under each rule
-walk(c("Smoky", "Non-smoky"), function(m) {
-  cat("\n--- Medium as", m, "---\n")
-  corrob |>
-    mutate(hms_binary = case_when(hms_density == "Heavy"  ~ "Smoky",
-                                  hms_density == "Medium" ~ m,
-                                  TRUE                    ~ "Non-smoky")) |>
-    filter(design != hms_binary) |>
-    dplyr::select(site, design, hms_density, pm25) |>
-    arrange(site) |> print(n = Inf)
-})
-
+# Save
+write.csv(YEWA, "Output/Tabular Data/YEWA_with_smoke.csv")
